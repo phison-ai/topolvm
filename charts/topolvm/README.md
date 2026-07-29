@@ -23,6 +23,7 @@ See [Getting Started](https://github.com/topolvm/topolvm/blob/topolvm-chart-v17.
 | controller.minReadySeconds | int | `nil` | Specify minReadySeconds. |
 | controller.nodeFinalize.skipped | bool | `false` | Skip automatic cleanup of PhysicalVolumeClaims when a Node is deleted. |
 | controller.nodeSelector | object | `{}` | Specify nodeSelector. # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/ |
+| controller.podAnnotations | object | `{}` | Annotations to be set on the controller pod. |
 | controller.podDisruptionBudget.enabled | bool | `true` | Specify podDisruptionBudget enabled. |
 | controller.podLabels | object | `{}` | Additional labels to be set on the controller pod. |
 | controller.priorityClassName | string | `nil` | Specify priorityClassName. |
@@ -41,6 +42,8 @@ See [Getting Started](https://github.com/topolvm/topolvm/blob/topolvm-chart-v17.
 | controller.tolerations | list | `[]` | Specify tolerations. # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/ |
 | controller.updateStrategy | object | `{}` | Specify updateStrategy. |
 | controller.volumes | list | `[{"emptyDir":{},"name":"socket-dir"}]` | Specify volumes. |
+| crd | object | `{"annotations":{}}` | CRD configuration. |
+| crd.annotations | object | `{}` | Additional annotations to add to CRDs (e.g. {"helm.sh/resource-policy": "keep"}). |
 | env.csi_provisioner | list | `[]` | Specify environment variables for csi_provisioner container. |
 | env.csi_registrar | list | `[]` | Specify environment variables for csi_registrar container. |
 | env.csi_resizer | list | `[]` | Specify environment variables for csi_resizer container. |
@@ -106,6 +109,7 @@ See [Getting Started](https://github.com/topolvm/topolvm/blob/topolvm-chart-v17.
 | node.metrics.annotations | object | `{"prometheus.io/port":"metrics"}` | Annotations for Scrape used by Prometheus. |
 | node.metrics.enabled | bool | `true` | If true, enable scraping of metrics by Prometheus. |
 | node.nodeSelector | object | `{}` | Specify nodeSelector. # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/ |
+| node.podAnnotations | object | `{}` | Annotations to be set on the node pods, merged with `node.metrics.annotations` and takes precedence over it. |
 | node.podLabels | object | `{}` | Additional labels to be set on the node pods. |
 | node.podSecurityContext | object | `{}` | Pod securityContext. # ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ |
 | node.priorityClassName | string | `nil` | Specify priorityClassName. |
