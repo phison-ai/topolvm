@@ -1,5 +1,5 @@
 # Build topolvm
-FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS build-topolvm
+FROM --platform=$BUILDPLATFORM golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647 AS build-topolvm
 
 # Get argument
 ARG TOPOLVM_VERSION
@@ -16,6 +16,7 @@ FROM ubuntu:22.04 AS topolvm
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
+    && apt-get -y upgrade \
     && apt-get -y install --no-install-recommends \
         btrfs-progs \
         file \
