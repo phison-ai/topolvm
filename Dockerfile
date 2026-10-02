@@ -18,6 +18,7 @@ FROM ubuntu:22.04 AS topolvm
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
+    && apt-get -y install --no-install-recommends --only-upgrade libssl3 \
     && apt-get -y install --no-install-recommends \
         btrfs-progs \
         file \
