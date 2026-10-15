@@ -3,7 +3,10 @@ package lvmd
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,6 +31,15 @@ const (
 	// stops invoking the tool (serving the cached failure instead). Restart
 	// lvmd to reset and re-check.
 	nvmeCheckMaxAttempts = 3
+
+	// defaultSysClassBlock is where the kernel exposes block devices; it is
+	// used to walk from a physical volume (e.g. an md RAID array) down to the
+	// disks backing it.
+	defaultSysClassBlock = "/sys/class/block"
+
+	// maxBackingDiskDepth bounds the walk through stacked block devices
+	// (e.g. dm-crypt on md on partitions) to guard against sysfs loops.
+	maxBackingDiskDepth = 16
 )
 
 // nvmeCheckEntry is the cached per-device state.
@@ -55,6 +67,9 @@ type nvmeChecker struct {
 	// run performs a single check for one device; nil error means supported.
 	// It is a field so tests can substitute a fake.
 	run func(ctx context.Context, cmd []string, device string) error
+	// sysClassBlock is the sysfs directory used to resolve backing disks.
+	// It is a field so tests can point it at a fake tree.
+	sysClassBlock string
 
 	mu    sync.Mutex
 	cache map[string]*nvmeCheckEntry
@@ -67,10 +82,11 @@ func newNVMeChecker(cmd []string) *nvmeChecker {
 		return nil
 	}
 	return &nvmeChecker{
-		cmd:         cmd,
-		maxAttempts: nvmeCheckMaxAttempts,
-		run:         runNVMeCheckDevice,
-		cache:       map[string]*nvmeCheckEntry{},
+		cmd:           cmd,
+		maxAttempts:   nvmeCheckMaxAttempts,
+		run:           runNVMeCheckDevice,
+		sysClassBlock: defaultSysClassBlock,
+		cache:         map[string]*nvmeCheckEntry{},
 	}
 }
 
@@ -121,6 +137,81 @@ func (c *nvmeChecker) check(ctx context.Context, device string) error {
 	logger.Error(err, "NVMe check failed; will retry on the next volume operation",
 		"device", device, "attempts", entry.attempts, "max_attempts", c.maxAttempts)
 	return err
+}
+
+// backingDisks returns the whole disks (e.g. ["/dev/nvme0n1", "/dev/nvme1n1"])
+// underneath a physical volume device path. Stacked devices such as md RAID
+// arrays, device-mapper targets and partitions are resolved through sysfs:
+//   - a device with entries in "slaves/" is replaced by those slaves;
+//   - a partition (has a "partition" file) is replaced by its parent disk;
+//   - anything else is a whole disk and is returned as is.
+//
+// If the device is not found in sysfs, it is returned unchanged so the check
+// still runs against it.
+func (c *nvmeChecker) backingDisks(ctx context.Context, devicePath string) ([]string, error) {
+	logger := log.FromContext(ctx)
+
+	// Resolve symlinks such as /dev/mapper/foo -> /dev/dm-0 or
+	// /dev/md/name -> /dev/md127 to get the kernel device name.
+	name := filepath.Base(devicePath)
+	if resolved, err := filepath.EvalSymlinks(devicePath); err == nil {
+		name = filepath.Base(resolved)
+	}
+
+	if _, err := os.Stat(filepath.Join(c.sysClassBlock, name)); err != nil {
+		logger.Info("block device not found in sysfs; checking it directly",
+			"device", devicePath, "sysfs", c.sysClassBlock, "error", err.Error())
+		return []string{devicePath}, nil
+	}
+
+	var disks []string
+	seen := map[string]bool{}
+	if err := c.walkBackingDisks(name, 0, seen, &disks); err != nil {
+		return nil, err
+	}
+	if len(disks) == 0 {
+		return nil, fmt.Errorf("no backing disk found for %s", devicePath)
+	}
+	if len(disks) != 1 || disks[0] != "/dev/"+name {
+		logger.Info("resolved backing disks for physical volume", "device", devicePath, "disks", disks)
+	}
+	return disks, nil
+}
+
+func (c *nvmeChecker) walkBackingDisks(name string, depth int, seen map[string]bool, disks *[]string) error {
+	if depth > maxBackingDiskDepth {
+		return fmt.Errorf("block device stack too deep at %s", name)
+	}
+	dir := filepath.Join(c.sysClassBlock, name)
+
+	slaves, err := os.ReadDir(filepath.Join(dir, "slaves"))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read slaves of %s: %w", name, err)
+	}
+	if len(slaves) > 0 {
+		for _, s := range slaves {
+			if err := c.walkBackingDisks(s.Name(), depth+1, seen, disks); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "partition")); err == nil {
+		// In sysfs a partition lives inside its parent disk's directory,
+		// e.g. .../nvme0n1/nvme0n1p1.
+		parentPath, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			return fmt.Errorf("failed to resolve sysfs path of %s: %w", name, err)
+		}
+		return c.walkBackingDisks(filepath.Base(filepath.Dir(parentPath)), depth+1, seen, disks)
+	}
+
+	if !seen[name] {
+		seen[name] = true
+		*disks = append(*disks, "/dev/"+name)
+	}
+	return nil
 }
 
 // runNVMeCheckDevice runs `cmd[0] cmd[1:]... <name>` once and parses the
@@ -199,7 +290,8 @@ func parseNVMeCheckOutput(out []byte) (int, error) {
 }
 
 // checkNVMe resolves the physical volume device paths backing the given volume
-// group and runs the NVMe VUC check against them. It is a no-op when the check
+// group, walks them down to the underlying disks (e.g. the members of an md
+// RAID array) and runs the NVMe VUC check against each disk. It is a no-op when the check
 // is not configured.
 func (s *lvService) checkNVMe(ctx context.Context, vgName string) error {
 	if s.nvmeChecker == nil {
@@ -216,9 +308,15 @@ func (s *lvService) checkNVMe(ctx context.Context, vgName string) error {
 	if len(devicePaths) == 0 {
 		return status.Errorf(codes.Internal, "NVMe check: no physical volume device found for volume group %s", vgName)
 	}
-	for _, dev := range devicePaths {
-		if err := s.nvmeChecker.check(ctx, dev); err != nil {
-			return err
+	for _, pv := range devicePaths {
+		disks, err := s.nvmeChecker.backingDisks(ctx, pv)
+		if err != nil {
+			return status.Errorf(codes.Internal, "failed to resolve backing disks of physical volume %s: %v", pv, err)
+		}
+		for _, disk := range disks {
+			if err := s.nvmeChecker.check(ctx, disk); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
