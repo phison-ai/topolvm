@@ -1,5 +1,5 @@
 # Build topolvm
-FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS build-topolvm
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS build-topolvm
 
 # Get argument
 ARG TOPOLVM_VERSION
@@ -20,9 +20,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get -y install --no-install-recommends --only-upgrade libssl3 \
     && apt-get -y install --no-install-recommends \
-        btrfs-progs \
-        file \
-        xfsprogs \
+    btrfs-progs \
+    file \
+    xfsprogs \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build-topolvm /workdir/build/hypertopolvm /hypertopolvm
@@ -45,7 +45,7 @@ ARG TARGETARCH
 ENV DEBIAN_FRONTEND=noninteractive
 RUN  apt-get update \
     && apt-get -y install --no-install-recommends \
-        patch
+    patch
 
 RUN --mount=type=secret,id=netrc,target=/root/.netrc,required=false \
     make csi-sidecars GOARCH=${TARGETARCH}
