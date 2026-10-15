@@ -233,3 +233,161 @@ func TestNVMeChecker_RecoversBeforeGivingUp(t *testing.T) {
 		t.Fatalf("expected 3 runs (2 fail + 1 success), ran %d", *calls)
 	}
 }
+
+// fakeSysfs builds a sysfs-like tree under a temp dir and returns the path to
+// use as sysClassBlock. Like the real sysfs, class/block/<name> is a symlink
+// into devices/, and a partition lives inside its parent disk's directory.
+type fakeSysfs struct {
+	t    *testing.T
+	root string
+}
+
+func newFakeSysfs(t *testing.T) *fakeSysfs {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "class", "block"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	return &fakeSysfs{t: t, root: root}
+}
+
+func (f *fakeSysfs) classBlock() string { return filepath.Join(f.root, "class", "block") }
+
+// add creates devices/<rel> and links class/block/<base(rel)> to it.
+func (f *fakeSysfs) add(rel string, slaves ...string) {
+	f.t.Helper()
+	dir := filepath.Join(f.root, "devices", rel)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		f.t.Fatal(err)
+	}
+	for _, s := range slaves {
+		if err := os.MkdirAll(filepath.Join(dir, "slaves"), 0755); err != nil {
+			f.t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "slaves", s), nil, 0644); err != nil {
+			f.t.Fatal(err)
+		}
+	}
+	link := filepath.Join(f.classBlock(), filepath.Base(rel))
+	if err := os.Symlink(filepath.Join("..", "..", "devices", rel), link); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// addPartition creates a partition <part> inside disk <disk>.
+func (f *fakeSysfs) addPartition(disk, part string) {
+	f.t.Helper()
+	f.add(filepath.Join(disk, part))
+	if err := os.WriteFile(filepath.Join(f.root, "devices", disk, part, "partition"), []byte("1\n"), 0644); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+const (
+	testDisk0 = "/dev/nvme0n1"
+	testDisk1 = "/dev/nvme1n1"
+	testMD    = "/dev/md127"
+)
+
+func TestNVMeChecker_BackingDisks(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name   string
+		setup  func(f *fakeSysfs)
+		device string
+		want   []string
+	}{
+		{
+			name:   "whole disk is returned as is",
+			setup:  func(f *fakeSysfs) { f.add("nvme0n1") },
+			device: testDisk0,
+			want:   []string{testDisk0},
+		},
+		{
+			name:   "partition resolves to its parent disk",
+			setup:  func(f *fakeSysfs) { f.add("nvme0n1"); f.addPartition("nvme0n1", "nvme0n1p1") },
+			device: "/dev/nvme0n1p1",
+			want:   []string{testDisk0},
+		},
+		{
+			name: "md raid over whole disks resolves to its members",
+			setup: func(f *fakeSysfs) {
+				f.add("nvme0n1")
+				f.add("nvme1n1")
+				f.add("virtual/md127", "nvme0n1", "nvme1n1")
+			},
+			device: testMD,
+			want:   []string{testDisk0, testDisk1},
+		},
+		{
+			name: "md raid over partitions resolves to parent disks",
+			setup: func(f *fakeSysfs) {
+				f.add("nvme0n1")
+				f.addPartition("nvme0n1", "nvme0n1p1")
+				f.add("nvme1n1")
+				f.addPartition("nvme1n1", "nvme1n1p1")
+				f.add("virtual/md127", "nvme0n1p1", "nvme1n1p1")
+			},
+			device: testMD,
+			want:   []string{testDisk0, testDisk1},
+		},
+		{
+			name: "device-mapper over md over partitions is fully resolved",
+			setup: func(f *fakeSysfs) {
+				f.add("nvme0n1")
+				f.addPartition("nvme0n1", "nvme0n1p1")
+				f.add("nvme1n1")
+				f.addPartition("nvme1n1", "nvme1n1p1")
+				f.add("virtual/md127", "nvme0n1p1", "nvme1n1p1")
+				f.add("virtual/dm-0", "md127")
+			},
+			device: "/dev/dm-0",
+			want:   []string{testDisk0, testDisk1},
+		},
+		{
+			name: "disks reached more than once are deduplicated",
+			setup: func(f *fakeSysfs) {
+				f.add("nvme0n1")
+				f.addPartition("nvme0n1", "nvme0n1p1")
+				f.addPartition("nvme0n1", "nvme0n1p2")
+				f.add("virtual/md127", "nvme0n1p1", "nvme0n1p2")
+			},
+			device: testMD,
+			want:   []string{testDisk0},
+		},
+		{
+			name:   "device missing from sysfs is returned unchanged",
+			setup:  func(f *fakeSysfs) {},
+			device: "/dev/nvme9n9",
+			want:   []string{"/dev/nvme9n9"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFakeSysfs(t)
+			tt.setup(f)
+			c := &nvmeChecker{sysClassBlock: f.classBlock()}
+
+			got, err := c.backingDisks(ctx, tt.device)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if strings.Join(got, ",") != strings.Join(tt.want, ",") {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNVMeChecker_BackingDisksLoop(t *testing.T) {
+	f := newFakeSysfs(t)
+	f.add("virtual/dm-0", "dm-1")
+	f.add("virtual/dm-1", "dm-0")
+	c := &nvmeChecker{sysClassBlock: f.classBlock()}
+
+	if _, err := c.backingDisks(context.Background(), "/dev/dm-0"); err == nil {
+		t.Fatal("expected an error for a looping device stack")
+	}
+}
