@@ -19,6 +19,9 @@ FROM ubuntu:22.04 AS topolvm
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get -y install --no-install-recommends \
+        apt \
+        apt-utils \
+        libapt-pkg6.0 \
         btrfs-progs \
         file \
         xfsprogs \
