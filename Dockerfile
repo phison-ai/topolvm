@@ -29,7 +29,9 @@ COPY --from=build-topolvm /workdir/build/hypertopolvm /hypertopolvm
 RUN ln -s hypertopolvm /lvmd \
     && ln -s hypertopolvm /topolvm-scheduler \
     && ln -s hypertopolvm /topolvm-node \
-    && ln -s hypertopolvm /topolvm-controller
+    && ln -s hypertopolvm /topolvm-controller \
+    && ln -s hypertopolvm /topolvm-attester \
+    && ln -s hypertopolvm /topolvm-attester-agent
 
 COPY --from=build-topolvm /workdir/LICENSE /LICENSE
 

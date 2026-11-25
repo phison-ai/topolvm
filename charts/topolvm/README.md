@@ -13,6 +13,32 @@ See [Getting Started](https://github.com/topolvm/topolvm/blob/topolvm-chart-v17.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| attester.affinity | object | `{}` | affinity of topolvm-attester. |
+| attester.agent.affinity | object | `{}` | affinity of the agent. |
+| attester.agent.nodeSelector | object | `{"otterscale.io/aidaptiv":"true"}` | Nodes that run the agent: the aiDAPTIV nodes. |
+| attester.agent.podAnnotations | object | `{}` | Annotations of agent Pods. |
+| attester.agent.podLabels | object | `{}` | Additional labels of agent Pods. |
+| attester.agent.port | int | `9449` | Port the agent listens on. |
+| attester.agent.priorityClassName | string | `nil` | priorityClassName of the agent. |
+| attester.agent.resources | object | `{"limits":{"cpu":"500m","memory":"256Mi"},"requests":{"cpu":"10m","memory":"64Mi"}}` | Resources of the agent. |
+| attester.agent.sails.image | string | `"ghcr.io/phison-ai/sails:v1.5.0"` | Image that carries Sails and its libraries; keep it in step with the Sails image of the lvmd values. |
+| attester.agent.serviceAccountName | string | `"topolvm-attester-agent"` | ServiceAccount of the agent; topolvm-attester only uses reports attested by it. |
+| attester.agent.tolerations | list | `[{"effect":"NoSchedule","key":"node-role.kubernetes.io/control-plane","operator":"Exists"}]` | tolerations of the agent. |
+| attester.certManager | bool | `true` | Create a cert-manager Issuer and Certificate for the API's serving certificate. If false, set attester.tlsSecretName. |
+| attester.enabled | bool | `false` | Deploy topolvm-attester and its node agent. |
+| attester.nodeSelector | object | `{}` | nodeSelector of topolvm-attester. |
+| attester.podAnnotations | object | `{}` | Annotations of topolvm-attester Pods. |
+| attester.podLabels | object | `{}` | Additional labels of topolvm-attester Pods. |
+| attester.priorityClassName | string | `nil` | priorityClassName of topolvm-attester. |
+| attester.replicaCount | int | `1` | Number of topolvm-attester replicas. |
+| attester.resources | object | `{"limits":{"cpu":"500m","memory":"128Mi"},"requests":{"cpu":"10m","memory":"64Mi"}}` | Resources of topolvm-attester. |
+| attester.reviewerClusterRoleName | string | `"topolvm-attester-reviewer"` | ClusterRole (tokenreviews create) MW's chart binds to MW's ServiceAccount so MW can verify attestations. |
+| attester.serviceAccountName | string | `"topolvm-attester"` | ServiceAccount of topolvm-attester. MW hardcodes `system:serviceaccount:<namespace>:<this>`, so it is not derived from the release name. |
+| attester.serviceName | string | `"topolvm-attester"` | Service MW calls, `https://<this>.<namespace>.svc`. |
+| attester.storageClass | string | `"aidaptiv-cache"` | Only Pods with a PVC or generic ephemeral volume of this StorageClass may call the API. Empty allows any Pod. |
+| attester.tlsSecretName | string | `""` | Existing Secret with tls.crt and tls.key, used when attester.certManager is false. |
+| attester.tolerations | list | `[]` | tolerations of topolvm-attester. |
+| attester.volumeGroup | string | `"vg_aidaptiv"` | LVM volume group behind the StorageClass; the agent checks the disks backing it. |
 | cert-manager.enabled | bool | `false` | Install cert-manager together. # ref: https://cert-manager.io/docs/installation/kubernetes/#installing-with-helm |
 | controller.additionalContainers | list | `[]` | Define extra containers to add to the Deployment. Please ensure not to use any existing container names. |
 | controller.affinity | string | `"podAntiAffinity:\n  requiredDuringSchedulingIgnoredDuringExecution:\n    - labelSelector:\n        matchExpressions:\n          - key: app.kubernetes.io/component\n            operator: In\n            values:\n              - controller\n          - key: app.kubernetes.io/name\n            operator: In\n            values:\n              - {{ include \"topolvm.name\" . }}\n      topologyKey: kubernetes.io/hostname\n"` | Specify affinity. # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity |

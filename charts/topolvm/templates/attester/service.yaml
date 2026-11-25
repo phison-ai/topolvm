@@ -1,0 +1,20 @@
+{{- if .Values.attester.enabled }}
+# MW calls https://<attester.serviceName>.<namespace>.svc; the name is fixed by values.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.attester.serviceName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: attester
+    {{- include "topolvm.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/component: attester
+    {{- include "topolvm.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: https
+      port: 443
+      protocol: TCP
+      targetPort: https
+{{- end }}

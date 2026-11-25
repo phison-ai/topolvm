@@ -780,3 +780,112 @@ priorityClass:
 snapshot:
   # snapshot.enabled -- Turn on the snapshot feature.
   enabled: true
+
+# topolvm-attester (Phison): an API the aiDAPTIV middleware (MW) calls to have the Phison
+# SSDs behind its aidaptiv-cache volume checked with Sails. Every answer is attested by a
+# ServiceAccount token (TokenRequest, audience sha256(result)) that MW verifies with
+# TokenReview. See docs/topolvm-attester.md.
+attester:
+  # attester.enabled -- Deploy topolvm-attester and its node agent.
+  enabled: false
+
+  # attester.serviceAccountName -- ServiceAccount of topolvm-attester. MW hardcodes
+  # `system:serviceaccount:<namespace>:<this>`, so it is not derived from the release name.
+  serviceAccountName: topolvm-attester
+
+  # attester.serviceName -- Service MW calls, `https://<this>.<namespace>.svc`.
+  serviceName: topolvm-attester
+
+  # attester.reviewerClusterRoleName -- ClusterRole (tokenreviews create) MW's chart binds
+  # to MW's ServiceAccount so MW can verify attestations.
+  reviewerClusterRoleName: topolvm-attester-reviewer
+
+  # attester.storageClass -- Only Pods with a PVC or generic ephemeral volume of this
+  # StorageClass may call the API. Empty allows any Pod.
+  storageClass: aidaptiv-cache
+
+  # attester.volumeGroup -- LVM volume group behind the StorageClass; the agent checks
+  # the disks backing it.
+  volumeGroup: vg_aidaptiv
+
+  # attester.replicaCount -- Number of topolvm-attester replicas.
+  replicaCount: 1
+
+  # attester.certManager -- Create a cert-manager Issuer and Certificate for the API's
+  # serving certificate. If false, set attester.tlsSecretName.
+  certManager: true
+
+  # attester.tlsSecretName -- Existing Secret with tls.crt and tls.key, used when
+  # attester.certManager is false.
+  tlsSecretName: ""
+
+  # attester.resources -- Resources of topolvm-attester.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 128Mi
+
+  # attester.priorityClassName -- priorityClassName of topolvm-attester.
+  priorityClassName:
+
+  # attester.podLabels -- Additional labels of topolvm-attester Pods.
+  podLabels: {}
+
+  # attester.podAnnotations -- Annotations of topolvm-attester Pods.
+  podAnnotations: {}
+
+  # attester.nodeSelector -- nodeSelector of topolvm-attester.
+  nodeSelector: {}
+
+  # attester.tolerations -- tolerations of topolvm-attester.
+  tolerations: []
+
+  # attester.affinity -- affinity of topolvm-attester.
+  affinity: {}
+
+  agent:
+    # attester.agent.serviceAccountName -- ServiceAccount of the agent; topolvm-attester
+    # only uses reports attested by it.
+    serviceAccountName: topolvm-attester-agent
+
+    # attester.agent.port -- Port the agent listens on.
+    port: 9449
+
+    sails:
+      # attester.agent.sails.image -- Image that carries Sails and its libraries; keep it
+      # in step with the Sails image of the lvmd values.
+      image: ghcr.io/phison-ai/sails:v1.5.0
+
+    # attester.agent.nodeSelector -- Nodes that run the agent: the aiDAPTIV nodes.
+    nodeSelector:
+      otterscale.io/aidaptiv: "true"
+
+    # attester.agent.tolerations -- tolerations of the agent.
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+
+    # attester.agent.affinity -- affinity of the agent.
+    affinity: {}
+
+    # attester.agent.resources -- Resources of the agent.
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+    # attester.agent.priorityClassName -- priorityClassName of the agent.
+    priorityClassName:
+
+    # attester.agent.podLabels -- Additional labels of agent Pods.
+    podLabels: {}
+
+    # attester.agent.podAnnotations -- Annotations of agent Pods.
+    podAnnotations: {}

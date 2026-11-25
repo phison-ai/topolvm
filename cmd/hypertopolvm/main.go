@@ -9,6 +9,9 @@ import (
 	controller "github.com/topolvm/topolvm/cmd/topolvm-controller/app"
 	node "github.com/topolvm/topolvm/cmd/topolvm-node/app"
 	scheduler "github.com/topolvm/topolvm/cmd/topolvm-scheduler/app"
+
+	attesteragent "github.com/topolvm/topolvm/cmd/topolvm-attester-agent/app"
+	attester "github.com/topolvm/topolvm/cmd/topolvm-attester/app"
 )
 
 func usage() {
@@ -19,6 +22,8 @@ COMMAND:
     topolvm-node:        TopoLVM CSI node service.
     topolvm-scheduler:   Scheduler extender.
     lvmd:                gRPC service to manage LVM volumes.
+    topolvm-attester:        Attested Phison SSD check API (Phison).
+    topolvm-attester-agent:  Node agent that runs Sails for topolvm-attester (Phison).
 `)
 }
 
@@ -42,6 +47,10 @@ func main() {
 		node.Execute()
 	case "topolvm-controller":
 		controller.Execute()
+	case "topolvm-attester":
+		attester.Execute()
+	case "topolvm-attester-agent":
+		attesteragent.Execute()
 	default:
 		usage()
 		os.Exit(1)
