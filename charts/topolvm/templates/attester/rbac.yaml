@@ -1,0 +1,145 @@
+{{- if .Values.attester.enabled }}
+# topolvm-attester: authenticates callers (TokenReview), reads the calling Pod and
+# its volumes, and lists the agent Pods.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ template "topolvm.fullname" . }}-attester
+  labels:
+    app.kubernetes.io/component: attester
+    {{- include "topolvm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ template "topolvm.fullname" . }}-attester
+  labels:
+    app.kubernetes.io/component: attester
+    {{- include "topolvm.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ template "topolvm.fullname" . }}-attester
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.attester.serviceAccountName }}
+    namespace: {{ .Release.Namespace }}
+---
+# Requesting tokens for its own ServiceAccount, and only that one, is what makes an
+# attestation unforgeable for anyone without rights in this namespace. Keep it this narrow.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ template "topolvm.fullname" . }}-attester-token
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: attester
+    {{- include "topolvm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: [{{ .Values.attester.serviceAccountName | quote }}]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ template "topolvm.fullname" . }}-attester-token
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: attester
+    {{- include "topolvm.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ template "topolvm.fullname" . }}-attester-token
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.attester.serviceAccountName }}
+    namespace: {{ .Release.Namespace }}
+---
+# topolvm-attester-agent: authenticates the attester (TokenReview) and attests its
+# reports with a token of its own ServiceAccount.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ template "topolvm.fullname" . }}-attester-agent
+  labels:
+    app.kubernetes.io/component: attester-agent
+    {{- include "topolvm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ template "topolvm.fullname" . }}-attester-agent
+  labels:
+    app.kubernetes.io/component: attester-agent
+    {{- include "topolvm.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ template "topolvm.fullname" . }}-attester-agent
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.attester.agent.serviceAccountName }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ template "topolvm.fullname" . }}-attester-agent-token
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: attester-agent
+    {{- include "topolvm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: [{{ .Values.attester.agent.serviceAccountName | quote }}]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ template "topolvm.fullname" . }}-attester-agent-token
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: attester-agent
+    {{- include "topolvm.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ template "topolvm.fullname" . }}-attester-agent-token
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.attester.agent.serviceAccountName }}
+    namespace: {{ .Release.Namespace }}
+---
+# What MW needs to verify an attestation. The chart does not know MW's
+# ServiceAccount, so MW's own chart binds this ClusterRole to it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Values.attester.reviewerClusterRoleName }}
+  labels:
+    app.kubernetes.io/component: attester
+    {{- include "topolvm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+{{- end }}

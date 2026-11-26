@@ -1,0 +1,39 @@
+{{- if and .Values.attester.enabled .Values.attester.certManager }}
+# The API's serving certificate. It protects the caller's token in transit; whether
+# an answer is genuine is proven by its attestation, not by this certificate.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ template "topolvm.fullname" . }}-attester-selfsign
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: attester
+    {{- include "topolvm.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ template "topolvm.fullname" . }}-attester
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: attester
+    {{- include "topolvm.labels" . | nindent 4 }}
+spec:
+  secretName: {{ template "topolvm.fullname" . }}-attester-tls
+  duration: 8760h # 1y
+  issuerRef:
+    group: cert-manager.io
+    kind: Issuer
+    name: {{ template "topolvm.fullname" . }}-attester-selfsign
+  dnsNames:
+    - {{ .Values.attester.serviceName }}
+    - {{ .Values.attester.serviceName }}.{{ .Release.Namespace }}
+    - {{ .Values.attester.serviceName }}.{{ .Release.Namespace }}.svc
+    - {{ .Values.attester.serviceName }}.{{ .Release.Namespace }}.svc.cluster.local
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+{{- end }}
